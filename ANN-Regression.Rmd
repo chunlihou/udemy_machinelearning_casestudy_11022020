@@ -1,0 +1,66 @@
+---
+title: "ANN for Regression Case Study"
+---
+
+```{r setup, include = FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Package importing
+```{r}
+pacman::p_load(dplyr, broom, caTools, 
+               ggplot2, gridExtra, 
+               caret, readxl,
+               h2o, forecast)
+```
+
+# Data preprocessing
+```{r}
+# Importing
+dataset = read_excel('Folds5x2_pp.xlsx')
+
+# Scaling
+dataset[, -ncol(dataset)] = scale(dataset[, -ncol(dataset)])
+
+# Partitioning
+set.seed(123)
+split = sample.split(dataset$PE, SplitRatio = 0.8)
+training.set = subset(dataset, split == T)
+test.set = subset(dataset, split == F)
+```
+
+# ANN model connection
+```{r}
+h2o.init(nthreads = -1)
+```
+
+# ANN model fitting
+```{r}
+mod = h2o.deeplearning(y = 'PE',
+                      training_frame = as.h2o(training.set),
+                      activation = 'Rectifier',
+                      hidden = c(6, 6),
+                      epochs = 100,
+                      train_samples_per_iteration = -2)
+```
+
+# ANN model prediction
+```{r}
+# Predicting
+y.pred = h2o.predict(mod,
+                     newdata = as.h2o(test.set[, -ncol(test.set)]))
+y.pred = as.vector(y.pred)
+
+# Evaluating
+y.acul = as.vector(test.set$PE)
+comp = data.frame(y.acul = y.acul,
+                  y.pred = y.pred)
+eval = accuracy(y.pred, y.acul)
+paste0('The RMSE is ', format(eval[, 'RMSE'], digit = 4))
+```
+
+# ANN model disconnection
+```{r}
+h2o.shutdown()
+```

@@ -1,0 +1,129 @@
+---
+title: "Regression Case Study"
+---
+
+```{r setup, include = FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library importing
+```{r}
+pacman::p_load(dplyr, broom, caTools, ggplot2, gridExtra, forecast)
+```
+
+# Dataset importing
+```{r}
+dataset = read.csv('realestate_roc.csv')
+dataset = dataset[, c(3, 4, 5, 8)]
+colnames(dataset) = c('age', 'd.mrt', 'n.store', 'price')
+glimpse(dataset)
+```
+
+# Dataset partitioning
+```{r}
+set.seed(123)
+split = sample.split(dataset$price, SplitRatio = 2/3)
+training.set = subset(dataset, split == T)
+test.set = subset(dataset, split == F)
+```
+
+# Model fitting
+```{r, warning = F, message = F}
+# Multiple linear regression
+mod.mlr = lm(price ~ .,
+             data = training.set)
+
+# Support vector regression
+library('e1071')
+mod.svr = svm(price ~ .,
+              data = training.set,
+              type = 'eps-regression',
+              kernel = 'linear')
+
+# Kernel support vector regression
+library('e1071')
+mod.ksvr = svm(price ~ .,
+               data = training.set,
+               type = 'eps-regression',
+               kernel = 'radial')
+
+# Decision tree regression
+library('rpart')
+mod.dt = rpart(price ~ .,
+               data = training.set,
+               method = 'anova',
+               control = rpart.control(xval = 10))
+plotcp(mod.dt)
+mod.dt.p = prune(mod.dt, cp = 0.025)
+
+# Random forest regression
+library('randomForest')
+mod.rf = randomForest(price ~ .,
+                      data = training.set,
+                      ntree = 500,
+                      mtry = 1,
+                      importance = T)
+```
+
+# Predication & Tunning
+```{r}
+# Multiple linear regression
+y.pred = predict(mod.mlr, newdata = test.set)
+error = accuracy(y.pred, test.set$price)
+rmse = format(round(error[2], 2), nsmall = 2) %>% as.numeric()
+eval = data.frame(RMSE = rmse)
+
+# Support vector regression
+y.pred = predict(mod.svr, newdata = test.set)
+error = accuracy(y.pred, test.set$price)
+rmse = format(round(error[2], 2), nsmall = 2) %>% as.numeric()
+eval = rbind(eval, rmse)
+
+# Kernel support vector regression
+y.pred = predict(mod.ksvr, newdata = test.set)
+error = accuracy(y.pred, test.set$price)
+rmse = format(round(error[2], 2), nsmall = 2) %>% as.numeric()
+eval = rbind(eval, rmse)
+
+# Decision tree regression
+y.pred = predict(mod.dt.p, newdata = test.set)
+error = accuracy(y.pred, test.set$price)
+rmse = format(round(error[2], 2), nsmall = 2) %>% as.numeric()
+eval = rbind(eval, rmse)
+
+# Random forest regression
+y.pred = predict(mod.rf, newdata = test.set)
+error = accuracy(y.pred, test.set$price)
+rmse = format(round(error[2], 2), nsmall = 2) %>% as.numeric()
+eval = rbind(eval, rmse)
+```
+
+# Model evaluating
+```{r}
+rownames(eval) = c('MLR',
+                   'SVR',
+                   'KSVR',
+                   'DT',
+                   'RF')
+
+eval[order(eval$RMSE), , drop = F]
+eval %>% 
+    arrange(RMSE) %>% 
+    mutate(ML.name = factor(c('RF',
+                              'KSVR',
+                              'DT',
+                              'MLR',
+                              'SVR'),
+                            levels = c('RF',
+                                       'KSVR',
+                                       'DT',
+                                       'MLR',
+                                       'SVR'))) %>% 
+    ggplot(aes(x = ML.name, y = RMSE)) +
+    geom_col() +
+    coord_cartesian(ylim = c(9, 12)) +
+    labs(title = 'Regression ML vs RMSE',
+         subtitle = 'Random Forest',
+         x = '')
+```

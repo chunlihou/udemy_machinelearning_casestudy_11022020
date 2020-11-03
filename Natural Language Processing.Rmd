@@ -1,0 +1,210 @@
+---
+title: "Natural Language Processing Case Study"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+```
+
+# Package importing
+```{r}
+pacman::p_load(dplyr, broom, caTools, ggplot2, gridExtra, caret)
+```
+
+# Dataset importing
+```{r, warning = F, message = F}
+dataset = read.delim('Restaurant_Reviews.tsv',
+                     quote = '',
+                     stringsAsFactors = F)
+dataset.ori = read.delim('Restaurant_Reviews.tsv', 
+                         quote = '',
+                         stringsAsFactors = F)
+library('tm')
+library('SnowballC')
+corpus = VCorpus(VectorSource(dataset$Review))
+corpus = tm_map(corpus, content_transformer(tolower))
+corpus = tm_map(corpus, removeNumbers)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, stopwords())
+corpus = tm_map(corpus, stemDocument)
+corpus = tm_map(corpus, stripWhitespace)
+dtm = DocumentTermMatrix(corpus)
+dtm = removeSparseTerms(dtm, sparse = 0.999)
+dataset = as.data.frame(as.matrix(dtm))
+dataset = dataset[, -c(80, 406)]
+dataset$Liked = dataset.ori$Liked
+dataset$Liked = factor(dataset$Liked, levels = c(0, 1))
+```
+
+# Dataset partitioning
+```{r}
+set.seed(123)
+split = sample.split(dataset$Liked, SplitRatio = 0.8)
+training.set = subset(dataset, split == T)
+test.set = subset(dataset, split == F)
+```
+
+# Model fitting
+```{r, warning = F, message = F}
+# Logistic regression
+mod.lr = glm(Liked ~ .,
+             data = training.set,
+             family = binomial)
+
+# K-nearest neighbors
+library('class')
+library('scales')
+accuracy.set = data.frame(k = seq(1, 20, 1), accuracy = rep(0, 20))
+for (i in 1:20) {
+    y.pred = knn(train = training.set[, -ncol(training.set)], 
+                 test = test.set[, -ncol(test.set)],
+                 cl = training.set[, ncol(training.set)],
+                 k = i)
+    accuracy.set[i, 2] = confusionMatrix(y.pred, 
+                                         test.set[, ncol(test.set)])$overall[1]
+}
+ggplot(data = accuracy.set, aes(x = k, y = accuracy)) +
+    geom_point() +
+    geom_line(linetype = 'dashed') +
+    scale_x_continuous(breaks = pretty_breaks(nrow(accuracy.set))) +
+    scale_y_continuous(breaks = pretty_breaks()) +
+    labs(title = 'Accuracy vs K-value',
+         subtitle = 'Best KNN',
+         x = 'K-value',
+         y = 'Accuracy')
+
+# Support vector machine
+library('e1071')
+mod.svm = svm(Liked ~ .,
+              data = training.set,
+              type = 'C-classification',
+              kernel = 'linear')
+
+# Kernel support vector machine
+library('e1071')
+mod.ksvm = svm(Liked ~ .,
+               data = training.set,
+               type = 'C-classification',
+               kernel = 'radial')
+
+# Naive bayes
+library('e1071')
+mod.nb = naiveBayes(x = training.set[, -ncol(training.set)],
+                    y = training.set[, ncol(training.set)])
+
+# Decision tree - CART
+library('rpart')
+mod.dt.cart = rpart(Liked ~ .,
+                    data = training.set,
+                    method = 'class',
+                    control = rpart.control(xval = 10))
+plotcp(mod.dt.cart)
+# mod.dt.cart.p = prune(mod.dt.cart, cp = 0.013)
+# plotcp(mod.dt.cart.p)
+
+# Decision tree - C5.0
+library('C50')
+mod.dt.c50 = C5.0(Liked ~ .,
+                  data = training.set)
+
+# Random forest
+library('randomForest')
+mod.rf = randomForest(Liked ~ .,
+                      data = training.set,
+                      ntree = 500)
+```
+
+# Predication & Tunning
+```{r, warning = F, message = F}
+# Logistic regression
+y.pred.prob = predict(mod.lr, type = 'response', 
+                      newdata = test.set[, -ncol(test.set)])
+y.pred = factor(ifelse(y.pred.prob > 0.5, 1, 0), levels = c(0, 1))
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = c(ac)
+F1 = c(f1)
+
+# eval = data.frame(Accuracy = ac, F1 = f1)
+
+# K-nearest neighbors (k = 1)
+y.pred = knn(train = training.set[, -ncol(training.set)],
+             test = test.set[, -ncol(test.set)],
+             cl = training.set[, ncol(training.set)],
+             k = 1)
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Support vector machine
+y.pred = predict(mod.svm, newdata = test.set[, -ncol(test.set)])
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Kernel support vector machine
+y.pred = predict(mod.ksvm, newdata = test.set[, -ncol(test.set)])
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Naive bayes
+y.pred = predict(mod.nb, newdata = test.set[, -ncol(test.set)])
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Decision tree - CART
+y.pred = predict(mod.dt.cart, newdata = test.set[, -ncol(test.set)], type = 'class')
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Decision tree - C5.0
+y.pred = predict(mod.dt.c50, newdata = test.set[, -ncol(test.set)], type = 'class')
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+
+# Random forest
+y.pred = predict(mod.rf, newdata = test.set[, -ncol(test.set)], type = 'class')
+cm = confusionMatrix(y.pred, test.set[, ncol(test.set)])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2) %>% as.numeric()
+f1 = format(round(cm$byClass['F1']*100, 2), nsmall = 2) %>% as.numeric
+Accuracy = append(Accuracy, ac)
+F1 = append(F1, f1)
+```
+
+# Model evaluating
+```{r}
+eval = cbind(Accuracy, F1)
+name = c('LR', 'KNN', 'SVM', 'KSVM', 'NB', 'DT-CART', 'DT-C50', 'RF')
+rownames(eval) = name
+eval = as.data.frame(eval)
+eval[order(-eval$Accuracy, -eval$F1), , drop = F]
+rank = c('SVM', 'RF', 'DT-CART', 'KNN', 'DT-50', 'LR', 'KSVM', 'NB')
+eval %>%
+    arrange(desc(Accuracy)) %>%
+    mutate(ML.name = factor(rank,
+                            levels = c(rank))) %>%
+    ggplot() +
+    geom_col(aes(x = ML.name, y = Accuracy)) +
+    coord_cartesian(ylim = c(40, 90)) +
+    labs(title = 'Classification ML vs Accuracy',
+         subtitle = 'SVM_BEST',
+         x = '')
+```

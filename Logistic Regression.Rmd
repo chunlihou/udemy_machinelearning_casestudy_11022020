@@ -1,0 +1,66 @@
+---
+title: "Logistic Regression Case Study"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Logistic Regression
+
+### Importing the libraries
+```{r}
+pacman::p_load(dplyr, broom, caTools, ggplot2, gridExtra, caret)
+```
+
+### Importing the dataset
+```{r}
+dataset = read.csv('breast_cancer.csv')
+glimpse(dataset)
+colSums(is.na(dataset))
+dataset = dataset[, -1]
+dataset = data.frame(lapply(dataset, as.factor))
+dataset$Class = factor(dataset$Class, 
+                       levels = c(2, 4), labels = c(0, 1))
+```
+
+### Splitting the dataset into the training set and test set
+```{r}
+set.seed(123)
+split = sample.split(dataset$Class, SplitRatio = 0.8)
+training.set = subset(dataset, split == T)
+test.set = subset(dataset, split == F)
+```
+
+### Training the logistic regression model on the training set
+```{r, warning = F}
+mod = glm(Class ~ .,
+          data = training.set,
+          family = binomial)
+```
+
+### Predicting the test set result
+```{r}
+y.pred.prob = predict(mod, type = 'response', newdata = test.set)
+y.pred = factor(ifelse(y.pred.prob > 0.5, 1, 0), levels = c(0, 1))
+```
+
+### Making the confusion matrix
+```{r}
+cm = confusionMatrix(y.pred, test.set[, 10])
+ac = format(round(cm$overall[1]*100, 2), nsmall = 2)
+paste0('Accuracy: ', ac, ' %')
+```
+
+### Computing the accuracy with k-fold cross validation
+```{r, warning = F}
+set.seed(123)
+train.control = trainControl(method = 'cv', number = 10)
+mod.cv = train(Class ~ .,
+               data = dataset,
+               trControl = train.control,
+               method = 'glm',
+               family = binomial())
+ac = format(round(mod.cv$results$Accuracy*100, 2), nsmall = 2)
+paste0('Accuracy: ', ac, ' %')
+```
