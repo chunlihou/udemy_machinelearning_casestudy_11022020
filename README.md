@@ -1,5 +1,3 @@
-udemy_machinelearning_casestudy_11022020
-
 # ABOUT
 
 - Udemy - Machine Learning - Case Study - 11022020
